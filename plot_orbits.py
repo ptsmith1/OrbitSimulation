@@ -1,21 +1,25 @@
+import random
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
+import numpy as np
+from astropy.time import Time
+from astroquery.jplhorizons import Horizons
+import scipy.constants as const
 
-fig = plt.figure()
-ax1 = fig.add_subplot(1, 1, 1)
+class SystemEvolve:
+    """
 
-def animate():
-    pullData = open("C:\\Users\\Philip\\Documents\\GitHub\\OrbitSimulation\\OrbitSimulation\\sampleText.txt", "r").read()
-    dataArray = pullData.split('\n')
-    xar = []
-    yar = []
-    for eachLine in dataArray:
-        if len(eachLine)>1:
-            x,y = eachLine.split(',')
-            xar.append(int(x))
-            yar.append(int(y))
-    ax1.clear()
-    ax1.plot(xar,yar)
+    """
+    def __init__(self):
+        self.time = 0
+        self.dt = 60 * 60 * 24
 
-ani = animation.FuncAnimation(fig, animate(), interval=1000)
-plt.show()
+    def evolve(self):
+        plots = []
+        lines = []
+        self.position += self.velocity * self.dt
+        orbital_radius = np.linalg.norm(self.position)
+        acc = -((const.G * self.mass * self.position) / (orbital_radius ** 3))
+        self.velocity += acc * self.dt
+        self.xpoints.append(self.position[0])
+        self.ypoints.append(self.position[1])
+        print(self.position, self.velocity, acc)
