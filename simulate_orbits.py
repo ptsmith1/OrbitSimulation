@@ -12,6 +12,7 @@ class SystemEvolve:
     def __init__(self):
         self.dt = 60 * 60 * 24
         self.mass = 1.989e30
+
     def evolve(self, planet):
         planet.position += planet.velocity * self.dt
         planet.orbital_radius = np.linalg.norm(planet.position)
