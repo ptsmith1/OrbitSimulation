@@ -26,6 +26,13 @@ class GenerateStockBody:
         self.mass = mass_array[self.ID-1]
         self.orbital_radius = 0
 
+    def __str__(self):
+        string = "String"
+        return string
+
+    def __repr__(self):
+        return self.__str__()
+
 
 class GenerateRandomBody:
     """
@@ -33,9 +40,9 @@ class GenerateRandomBody:
     """
     def __init__(self, ID):
         min_distance = 2e9
-        max_distance = 1e12
+        max_distance = 2e12
         min_velocity = 0
-        max_velocity = 5e4
+        max_velocity = 5e3
         self.position = np.array([random.choice([-1,1])*random.randint(min_distance,max_distance),random.choice([-1,1])*random.randint(min_distance,max_distance),0], dtype=np.float)
         self.velocity = np.array([random.choice([-1,1])*random.randint(min_velocity,max_velocity),random.choice([-1,1])*random.randint(min_velocity,max_velocity),0], dtype=np.float)
         self.acc = np.array([0, 0, 0])
@@ -43,5 +50,5 @@ class GenerateRandomBody:
         self.ypoints = []
         self.ID = ID
         self.time = 0
-        self.mass = random.randint(2e24,2e29)
+        self.mass = random.randint(2e23,2e27)
         self.orbital_radius = 0

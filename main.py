@@ -5,11 +5,14 @@ import time
 import cProfile, pstats, io
 from generate_system import *
 
+
 def main():
     start = time.time_ns()
-    Simulation()
+    sim = Simulation()
+    sim.run_sim()
     end = time.time_ns()
     print("Run time: ", (end - start)/1e9, "seconds")
+
 
 class Simulation:
     """
@@ -18,19 +21,22 @@ class Simulation:
     def __init__(self):
         """Simulation parameters"""
         self.random_planets = True  # if false use our solar system
+        self.planet_interactions = True  # whether to turn on interactions between planets
         self.planet_count = 25  # planets to create, max 9 if using our solar system
         self.days_to_plot = 100  # the number of days for which the position of each planet is plotted
         self.dt = 3600 * 24  # in seconds
-        self.run_time = 25  # in years
+        self.run_time = 100  # in years
         self.sun_mass = 1.989e30
+        self.acc_limiter = 0.05  # this limits how fast a planet can acceleration to stop infinte acceleration when the seperation between two bodies tends to 0
         """Plotting parameters"""
-        self.plot_data = False  # choose whether to plot the positions of planets
-        self.axes_limit = 2000e9  # size of plot window in meters
+        self.plot_data = True  # choose whether to plot the positions of planets
+        self.axes_limit = 3000e9  # size of plot window in meters
         self.plot_interval = 25  # in days
         self.delete_distance = 30  # the distance from the Sun at which a planet is deleted in AU
         self.colours = ['gray', 'orange', 'blue', 'chocolate','brown','hotpink','black','green','violet']  # line colours
         """--------------------"""
 
+    def run_sim(self):
         if not self.random_planets:
             self.planet_count = 9
 
@@ -38,9 +44,9 @@ class Simulation:
         self.create_planets()
 
         if self.plot_data:
-            self.plot = Plotting(self)
-            self.create_plot()
-            self.plot.start_anim(self)
+            plot = Plotting(self)
+            plot.create_plot(self)
+            plot.start_anim(self)
 
         else:
             for i in range(self.run_time * 365):
@@ -60,21 +66,25 @@ class Simulation:
             else:
                 self.planets.append(GenerateStockBody(i+1))
 
-    def create_plot(self):
-        self.plot.create_plot(self)
-
     def evolve(self, planets):
         """
-        Updates the location of each planet based on its acceleration due to the Suns gravitational field only
+        Updates the location of each planet based on its acceleration dcape towaddis ababbjohannisbesberfue to the Suns gravitational field only
         """
         length = len(planets)
         # acc here stores a list of accelerations for each planet
-        acc = self.calc_planet_attraction(planets, length)
+        if self.planet_interactions:
+            acc_list = self.calc_planet_attraction(planets, length)
         for n, planet in enumerate(planets):
             planet.position += planet.velocity * self.dt
             planet.orbital_radius = np.linalg.norm(planet.position)
             planet.acc = -((const.G * self.sun_mass * planet.position) / (planet.orbital_radius ** 3))
-            planet.acc += self.collapse_acc(acc, planet, length, n)
+            if self.planet_interactions:
+                planet.acc += self.collapse_acc(acc_list, planet, length, n)
+            for count, comp in enumerate(planet.acc):
+                if comp >= self.acc_limiter:
+                    planet.acc[count] = self.acc_limiter
+                elif comp <= -self.acc_limiter:
+                    planet.acc[count] = -self.acc_limiter
             planet.velocity += planet.acc * self.dt
             planet.xpoints.append(planet.position[0])
             planet.ypoints.append(planet.position[1])
@@ -97,19 +107,22 @@ class Simulation:
                 elif n>m:
                     acc.append(-acc[m * length + n])
                 else:
-                    seperation = np.subtract(planet_n.position, planet_m.position)
-                    norm_seperation = np.linalg.norm(seperation)
-                    acc.append(np.array(-((const.G * planet_n.mass * seperation) / (norm_seperation ** 3))))
+                    separation = np.subtract(planet_n.position, planet_m.position)
+                    norm_separation = np.linalg.norm(separation)
+                    if norm_separation >= 1e8:
+                        acc.append(np.array(-((const.G * planet_n.mass * separation) / (norm_separation ** 3))))
+                    else:
+                        acc.append([0,0,0])
         return acc
 
-    def collapse_acc(self, acc, planet, length, n):
+    def collapse_acc(self, acc_list, planet, length, n):
         """
         Sums the component's of acc that apply to planet into a single acceleration which is added to the component
         from the sun
         """
         acc_sum = np.array([0.0,0.0,0.0])
         for m in range(length):
-            acc_sum += acc[length * n + m]
+            acc_sum += acc_list[length * n + m]
         return acc_sum
 
 class Plotting:
@@ -122,7 +135,8 @@ class Plotting:
         self.plots = []
         self.labels = []
         self.save_anim = False
-        self.fig, (self.ax1, self.ax2) = plt.subplots(nrows=2, ncols=1)
+        self.fig, (self.ax1, self.ax2) = plt.subplots(nrows=2, ncols=1, gridspec_kw={'height_ratios': [3, 1]})
+        self.fig.set_size_inches(10, 8)
         self.ax1.set_xlim(-simulation.axes_limit, simulation.axes_limit)
         self.ax1.set_ylim(-simulation.axes_limit, simulation.axes_limit)
         self.timestamp = self.ax1.text(.03, .94, 'Day: ', color='b', transform=self.ax1.transAxes, fontsize='x-large')
@@ -159,7 +173,7 @@ class Plotting:
         animation. Therefore it is tricky to keep track of the simulation time and so i am keeping time with each planet
         rather than based on the number of frames that have been made.
         """
-        self.delete_plots(simulation.planets)  # deletes old plots
+        if len(simulation.planets) != 0: self.delete_plots(simulation.planets)  # deletes old plots
         self.plot_time(i)  # creates the data for, and updates the time plot
         print("dt(frame) = ", self.time_steps[i], " ms")
         if len(simulation.planets) > 0:
@@ -184,7 +198,7 @@ class Plotting:
             self.lines[n].set_ydata(planet.ypoints)
             self.labels[n].set_x(planet.position[0])
             self.labels[n].set_y(planet.position[1])
-            self.labels[n].set_text(str(round(orbital_radius, 3)) + 'AU')
+            self.labels[n].set_text("{:.2e}".format(planet.mass/5.972e24) + 'ME' + '\n' + str(round(orbital_radius, 2)) + 'AU')
 
         self.timestamp.set_text('Year: ' + str(round(year, 4)))
         return self.lines + self.plots + [self.timestamp] + self.labels + self.time_plot
@@ -212,6 +226,7 @@ class Plotting:
 
 
 if __name__ == "__main__":
+    """Remove # for profiling"""
     # pr = cProfile.Profile()
     # pr.enable()
     main()
