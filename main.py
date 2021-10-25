@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
 import time
+import math
 import cProfile, pstats, io
 from generate_system import *
 
@@ -21,13 +22,15 @@ class Simulation:
     def __init__(self):
         """Simulation parameters"""
         self.random_planets = True  # if false use our solar system
+        self.stock_planets = False
+        self.debugging = False
         self.planet_interactions = True  # whether to turn on interactions between planets
-        self.planet_count = 25  # planets to create, max 9 if using our solar system
+        self.planet_count = 15  # planets to create, max 9 if using our solar system
         self.days_to_plot = 100  # the number of days for which the position of each planet is plotted
         self.dt = 3600 * 24  # in seconds
-        self.run_time = 100  # in years
+        self.run_time = 1000  # in years
         self.sun_mass = 1.989e30
-        self.acc_limiter = 0.05  # this limits how fast a planet can acceleration to stop infinte acceleration when the seperation between two bodies tends to 0
+        self.acc_limiter = 555555555  # this limits how fast a planet can acceleration to stop infinte acceleration when the seperation between two bodies tends to 0
         """Plotting parameters"""
         self.plot_data = True  # choose whether to plot the positions of planets
         self.axes_limit = 3000e9  # size of plot window in meters
@@ -37,9 +40,8 @@ class Simulation:
         """--------------------"""
 
     def run_sim(self):
-        if not self.random_planets:
+        if self.stock_planets:
             self.planet_count = 9
-
         self.planets = []
         self.create_planets()
 
@@ -61,10 +63,11 @@ class Simulation:
             Generates the planets with random velocity/positions or based off our solar system
             """
             if self.random_planets:
-                self.planets.append(GenerateRandomBody(i + 1))
-
-            else:
-                self.planets.append(GenerateStockBody(i+1))
+                self.planets.append(GenerateRandomBody(i + 1, self.sun_mass))
+            elif self.debugging:
+                self.planets.append(GenerateDebugBody(i + 1, self.sun_mass))
+            elif self.stock_planets:
+                self.planets.append(GenerateStockBody(i+1, self.sun_mass))
 
     def evolve(self, planets):
         """
@@ -86,12 +89,19 @@ class Simulation:
                 elif comp <= -self.acc_limiter:
                     planet.acc[count] = -self.acc_limiter
             planet.velocity += planet.acc * self.dt
+            planet.velocity = np.multiply(planet.velocity, self.check_energy_conservation(planet))
             planet.xpoints.append(planet.position[0])
             planet.ypoints.append(planet.position[1])
             planet.time += self.dt
             if len(planet.xpoints) >= self.days_to_plot:
                 planet.xpoints.pop(0)
                 planet.ypoints.pop(0)
+
+    def check_energy_conservation(self, planet):
+        separation = np.linalg.norm(planet.position)
+        v_mag_current = np.linalg.norm(planet.velocity)
+        v_mag_max = math.sqrt(abs((planet.k + ((const.G*self.sun_mass*planet.mass)/(1+separation))) * 2/planet.mass))
+        return abs(v_mag_max/v_mag_current)
 
     def calc_planet_attraction(self, planets, length):
         """
@@ -103,16 +113,14 @@ class Simulation:
         for n, planet_n in enumerate(planets):
             for m, planet_m in enumerate(planets):
                 if n == m:
-                    acc.append(np.array([0,0,0]))
+                    acc.append([0,0,0])
                 elif n>m:
-                    acc.append(-acc[m * length + n])
+                    acc.append(-1 * acc[m * length + n])
                 else:
                     separation = np.subtract(planet_n.position, planet_m.position)
                     norm_separation = np.linalg.norm(separation)
-                    if norm_separation >= 1e8:
-                        acc.append(np.array(-((const.G * planet_n.mass * separation) / (norm_separation ** 3))))
-                    else:
-                        acc.append([0,0,0])
+                    acc.append(-((const.G * planet_n.mass * separation) / (norm_separation ** 3)))
+
         return acc
 
     def collapse_acc(self, acc_list, planet, length, n):
@@ -181,9 +189,9 @@ class Plotting:
         else:
             plt.close()
 
-        if year >= simulation.run_time:
-            # ends the simulation
-            plt.close()
+        # if year >= simulation.run_time:
+        #     # ends the simulation
+        #     plt.close()
         for count in range(simulation.plot_interval):
             simulation.evolve(simulation.planets)
 
