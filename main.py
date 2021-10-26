@@ -12,6 +12,13 @@ def main():
     sim = Simulation()
     sim.run_sim()
     end = time.time_ns()
+    if sim.plot_data:
+        plot = Plotting(sim)
+        plot.create_plot(sim)
+        plot.start_anim(sim)
+        # if len(planet.xpoints) >= self.days_to_plot:
+        #     planet.xpoints.pop(0)
+        #     planet.ypoints.pop(0)
     print("Run time: ", (end - start)/1e9, "seconds")
 
 
@@ -25,37 +32,25 @@ class Simulation:
         self.stock_planets = False
         self.debugging = False
         self.planet_interactions = True  # whether to turn on interactions between planets
-        self.planet_count = 15  # planets to create, max 9 if using our solar system
-        self.days_to_plot = 100  # the number of days for which the position of each planet is plotted
+        self.planet_count = 100  # planets to create, max 9 if using our solar system
         self.dt = 3600 * 24  # in seconds
-        self.run_time = 1000  # in years
+        self.run_time = 10  # in years
         self.sun_mass = 1.989e30
         self.acc_limiter = 555555555  # this limits how fast a planet can acceleration to stop infinte acceleration when the seperation between two bodies tends to 0
         """Plotting parameters"""
         self.plot_data = True  # choose whether to plot the positions of planets
         self.axes_limit = 3000e9  # size of plot window in meters
         self.plot_interval = 25  # in days
+        self.days_to_plot = 100  # the number of days for which the position of each planet is plotted
         self.delete_distance = 30  # the distance from the Sun at which a planet is deleted in AU
         self.colours = ['gray', 'orange', 'blue', 'chocolate','brown','hotpink','black','green','violet']  # line colours
         """--------------------"""
-
-    def run_sim(self):
+        self.planets = []
+        self.times = []
         if self.stock_planets:
             self.planet_count = 9
-        self.planets = []
+
         self.create_planets()
-
-        if self.plot_data:
-            plot = Plotting(self)
-            plot.create_plot(self)
-            plot.start_anim(self)
-
-        else:
-            for i in range(self.run_time * 365):
-                self.evolve(self.planets)
-                if i % 25 == 0:
-                    print("Year:", self.planets[0].time / (self.dt * 365))
-                    print("ID:", self.planets[0].ID, "Position:", self.planets[0].position, "Velocity", self.planets[0].velocity, "Acceleration", self.planets[0].acc)
 
     def create_planets(self):
         for i in range(self.planet_count):
@@ -69,9 +64,20 @@ class Simulation:
             elif self.stock_planets:
                 self.planets.append(GenerateStockBody(i+1, self.sun_mass))
 
+    def run_sim(self):
+        for i in range(self.run_time * 365 * ((3600 * 24)//self.dt)):
+            self.times.append(self.planets[0].time)
+            self.evolve(self.planets)
+            if i % 25 == 0:
+                # prints every 25 timesteps
+                print("Year:", self.planets[0].time / (self.dt * 365))
+                print("ID:", self.planets[0].ID, "Position:", self.planets[0].position, "Velocity", self.planets[0].velocity, "Acceleration", self.planets[0].acc)
+        print("Year:", self.planets[0].time / (self.dt * 365))
+        print("ID:", self.planets[0].ID, "Position:", self.planets[0].position, "Velocity", self.planets[0].velocity, "Acceleration", self.planets[0].acc)
+
     def evolve(self, planets):
         """
-        Updates the location of each planet based on its acceleration dcape towaddis ababbjohannisbesberfue to the Suns gravitational field only
+        Updates the location of each planet based on its acceleration due to the gravitation field of the sun and other planets
         """
         length = len(planets)
         # acc here stores a list of accelerations for each planet
@@ -92,10 +98,8 @@ class Simulation:
             planet.velocity = np.multiply(planet.velocity, self.check_energy_conservation(planet))
             planet.xpoints.append(planet.position[0])
             planet.ypoints.append(planet.position[1])
+            planet.orbital_radii.append(planet.orbital_radius)
             planet.time += self.dt
-            if len(planet.xpoints) >= self.days_to_plot:
-                planet.xpoints.pop(0)
-                planet.ypoints.pop(0)
 
     def check_energy_conservation(self, planet):
         separation = np.linalg.norm(planet.position)
@@ -138,24 +142,17 @@ class Plotting:
     Holds the plot objects
     """
     def __init__(self, simulation):
-        self.frames = ((simulation.run_time * 365) // simulation.plot_interval) + 1
+        self.frames = ((simulation.run_time * 365) // simulation.plot_interval)
         self.lines = []
         self.plots = []
         self.labels = []
         self.save_anim = False
-        self.fig, (self.ax1, self.ax2) = plt.subplots(nrows=2, ncols=1, gridspec_kw={'height_ratios': [3, 1]})
+        self.fig, (self.ax1) = plt.subplots(nrows=1, ncols=1)
         self.fig.set_size_inches(10, 8)
         self.ax1.set_xlim(-simulation.axes_limit, simulation.axes_limit)
         self.ax1.set_ylim(-simulation.axes_limit, simulation.axes_limit)
         self.timestamp = self.ax1.text(.03, .94, 'Day: ', color='b', transform=self.ax1.transAxes, fontsize='x-large')
         self.sun = self.ax1.scatter([0], [0], color='yellow', s=100)
-
-        # Time plot variables
-        self.times = []
-        self.times.append(time.time_ns())
-        self.time_steps = []
-        self.x_time_data = []
-        self.time_plot = self.ax2.plot(self.x_time_data, self.time_steps)
 
     def create_plot(self, simulation):
         for i in range(simulation.planet_count):
@@ -168,7 +165,7 @@ class Plotting:
             self.lines.append(line)
 
     def start_anim(self, simulation):
-        ani = animation.FuncAnimation(self.fig, self.animate, repeat=False, frames=self.frames,
+        ani = animation.FuncAnimation(self.fig, self.animate, repeat=True, frames=self.frames,
                                       fargs=(simulation,), blit=True, interval=0, )
         if self.save_anim:
             ani.save('C:/Users/Philip/Pictures/sim/animation2' + str(time.time()) + '.gif', writer='imagemagick', fps=60)
@@ -181,44 +178,28 @@ class Plotting:
         animation. Therefore it is tricky to keep track of the simulation time and so i am keeping time with each planet
         rather than based on the number of frames that have been made.
         """
-        if len(simulation.planets) != 0: self.delete_plots(simulation.planets)  # deletes old plots
-        self.plot_time(i)  # creates the data for, and updates the time plot
-        print("dt(frame) = ", self.time_steps[i], " ms")
-        if len(simulation.planets) > 0:
-           year = simulation.planets[-1].time / (3600 * 24 * 365)
-        else:
-            plt.close()
 
-        # if year >= simulation.run_time:
-        #     # ends the simulation
-        #     plt.close()
-        for count in range(simulation.plot_interval):
-            simulation.evolve(simulation.planets)
+        current_point = simulation.plot_interval * (i + 1) - 1
+        start_point = 0
+        if current_point - simulation.days_to_plot > 0: start_point = current_point - simulation.days_to_plot
+        year = simulation.times[current_point] / (3600 * 24 * 365)
 
         for n, planet in enumerate(simulation.planets):
             """ 
             Calls the evolve method x times per animation frames where x=plot_interval and then updates all the plot
             items. This is a lot quicker than updating the animation each time each planets position is updated.
             """
-            orbital_radius = planet.orbital_radius / 149597870700
-            self.plots[n].set_offsets(planet.position[:2])
-            self.lines[n].set_xdata(planet.xpoints)
-            self.lines[n].set_ydata(planet.ypoints)
-            self.labels[n].set_x(planet.position[0])
-            self.labels[n].set_y(planet.position[1])
+            orbital_radius = planet.orbital_radii[current_point] / 149597870700
+            x = np.array([planet.xpoints[current_point],planet.ypoints[current_point]])
+            self.plots[n].set_offsets(x)
+            self.lines[n].set_xdata(planet.xpoints[start_point:current_point])
+            self.lines[n].set_ydata(planet.ypoints[start_point:current_point])
+            self.labels[n].set_x(planet.xpoints[current_point])
+            self.labels[n].set_y(planet.ypoints[current_point])
             self.labels[n].set_text("{:.2e}".format(planet.mass/5.972e24) + 'ME' + '\n' + str(round(orbital_radius, 2)) + 'AU')
 
         self.timestamp.set_text('Year: ' + str(round(year, 4)))
-        return self.lines + self.plots + [self.timestamp] + self.labels + self.time_plot
-
-    def plot_time(self, i):
-        self.times.append(time.time_ns())
-        self.time_steps.append((self.times[i + 1] - self.times[i]) / 1e6)
-        self.x_time_data.append(len(self.times) - 1)
-        self.time_plot[0].set_xdata(self.x_time_data)
-        self.time_plot[0].set_ydata(self.time_steps)
-        self.ax2.set_xlim(0, len(self.x_time_data))
-        self.ax2.set_ylim(0, max(self.time_steps) + 10)
+        return self.lines + self.plots + [self.timestamp] + self.labels
 
     def delete_plots(self, planets):
         to_delete = []

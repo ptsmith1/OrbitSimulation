@@ -13,6 +13,7 @@ class GenerateBody:
     def __init__(self):
         self.xpoints = []
         self.ypoints = []
+        self.orbital_radii = []
         self.time = 0
         self.orbital_radius = 0
         self.position = 0
