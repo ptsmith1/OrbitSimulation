@@ -78,3 +78,19 @@ class GenerateDebugBody(GenerateBody):
         self.ID = ID
         self.mass = 2e23
         self.calc_energy_conservation(sun_mass)
+
+class GenerateStar(GenerateBody):
+    """
+    Generates random solar system
+    """
+    def __init__(self, ID, sun_mass):
+        GenerateBody.__init__(self)
+        x_distance = 0
+        y_distance = 0
+        x_velocity = 0
+        y_velocity = 0
+        self.position = np.array([x_distance,y_distance,0], dtype=np.float)
+        self.velocity = np.array([x_velocity,y_velocity,0], dtype=np.float)
+        self.acc = np.array([0, 0, 0])
+        self.ID = ID
+        self.mass = sun_mass
