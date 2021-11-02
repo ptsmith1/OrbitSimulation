@@ -30,21 +30,21 @@ class Simulation:
     """
     def __init__(self):
         """Simulation parameters"""
-        self.random_planets = True  # if false use our solar system
+        self.random_planets = False  # if false use our solar system
         self.stock_planets = False
-        self.debugging = False
-        self.planet_interactions = True  # whether to turn on interactions between planets
-        self.planet_count = 50  # planets to create, max 9 if using our solar system
-        self.dt = int(3600 * 1)  # in seconds
-        self.run_time = 5  # in years
+        self.debugging = True
+        self.planet_count = 5  # planets to create, max 9 if using our solar system
+        self.dt = int(3600 * 24)  # in seconds
+        self.run_time = 30 # in years
         self.sun_mass = 1.989e30
-        self.minimum_interaction_distance = 1e10  # to stop planets flying off at high velocities due to a timestep placing a body very close to another (this is a temporary fudge)
+        self.minimum_interaction_distance = 1e8  # to stop planets flying off at high velocities due to a timestep placing a body very close to another (this is a temporary fudge)
         self.parallel_speedup_on = True # choose whether to use parallel speedup
         """Plotting parameters"""
         self.plot_data = True  # choose whether to plot the positions of planets
-        self.plot_labels = False
+        self.plot_labels = True
+        self.save_anim = False
         self.axes_limit = 3000e9  # size of plot window in meters
-        self.plot_interval = 50  # in days
+        self.plot_interval = 25  # in days
         self.days_to_plot = 100  # the number of days for which the position of each planet is plotted
         self.delete_distance = 30  # the distance from the Sun at which a planet is deleted in AU
         self.colours = ['gray', 'orange', 'blue', 'chocolate','brown','hotpink','black','green','violet']  # line colours
@@ -57,25 +57,28 @@ class Simulation:
         self.acc_array = np.empty([self.planet_count,3])
         self.times = []
         if self.stock_planets:
-            self.planet_count = 9
+            self.planet_count = 10
         self.create_planets()
 
     def create_planets(self):
-        self.planets.append(GenerateStar(1, self.sun_mass))
+        self.planets.append(GenerateStar(0, self.sun_mass))
         for i in range(self.planet_count -1):
             """
             Generates the planets with random velocity/positions or based off our solar system
             """
             if self.random_planets:
-                self.planets.append(GenerateRandomBody(i + 2, self.sun_mass))
+                self.planets.append(GenerateRandomBody(i + 1, self.sun_mass))
             elif self.debugging:
-                self.planets.append(GenerateDebugBody(i + 2, self.sun_mass))
+                self.planets.append(GenerateDebugBody(i + 1, self.sun_mass))
             elif self.stock_planets:
-                self.planets.append(GenerateStockBody(i + 2, self.sun_mass))
+                self.planets.append(GenerateStockBody(i + 1))
         self.mass_array = np.asarray([self.planets[i].mass for i in range(self.planet_count)], dtype=np.float64)
         self.pos_array = np.stack([self.planets[i].position for i in range(self.planet_count)], axis=0)
         self.vel_array = np.stack([self.planets[i].velocity for i in range(self.planet_count)], axis=0)
         self.acc_array = np.zeros_like(self.pos_array, dtype=np.float64)
+        gpe_array = self.get_gpe()
+        for n, planet in enumerate(self.planets):
+            planet.k = gpe_array[n] + 0.5 * planet.mass * np.linalg.norm(planet.velocity) * np.linalg.norm(planet.velocity)
 
     def run_sim(self):
         for i in range(self.run_time * 365 * ((3600 * 24)//self.dt)):
@@ -99,8 +102,9 @@ class Simulation:
         else:
             self.calc_acc()
         self.vel_array = np.add(self.vel_array, self.acc_array * self.dt)
-        # for i in range(self.planet_count): ///i need to account for gpe from every planet and vectorize to use the energy conservation method
-        #     self.vel_array[i] = np.multiply(self.vel_array[i], self.check_energy_conservation(i))
+        velocity_corrections = self.check_energy_conservation()
+        for i in range(self.planet_count):
+            self.vel_array[i] = np.multiply(self.vel_array[i], velocity_corrections[i])
 
         for n, planet in enumerate(planets):
             # creates data for outputting/visualisation on each planet
@@ -130,6 +134,9 @@ class Simulation:
     @guvectorize(['void(float64[:,:], float64[:], float64[:], int64, float64[:])'],
                  '(b,d),(d),(b),()->(d)', nopython=True, target='parallel')
     def calc_acc_parallel(pos_array, my_pos_array, mass_array, minimum_interaction_distance, acc_out):
+        acc_out[0] = 0
+        acc_out[1] = 0
+        acc_out[2] = 0
         b, d = pos_array.shape
         G = 6.67408e-11
         for m_planet in range(b):
@@ -146,12 +153,35 @@ class Simulation:
                 acc_out[1] = acc_out[1] + ay
                 acc_out[2] = acc_out[2] + az
 
-    def check_energy_conservation(self, i):
-        separation = np.linalg.norm(self.pos_array[i])
-        v_mag_current = np.linalg.norm(self.vel_array[i])
-        v_mag_max = math.sqrt(abs((self.planets[i].k + ((const.G*self.sun_mass*self.mass_array[i])/(1+separation))) * 2/self.mass_array[i]))
-        return abs(v_mag_max/v_mag_current)
+    def get_gpe(self):
+        gpe_array = np.zeros((self.planet_count))
+        for n in range(self.planet_count):
+            gpe = 0
+            for m in range(self.planet_count):
+                separation = np.subtract(self.pos_array[n], self.pos_array[m])
+                norm_separation = np.linalg.norm(separation)
+                gpe += -((const.G*self.mass_array[n]*self.mass_array[m])/(1+norm_separation))
+            gpe_array[n] = gpe
+        return gpe_array
 
+    def check_energy_conservation(self):
+        vel_correction = np.zeros((self.planet_count))
+        for n in range(self.planet_count):
+            gpe = 0
+            for m in range(self.planet_count):
+                separation = np.subtract(self.pos_array[n], self.pos_array[m])
+                norm_separation = np.linalg.norm(separation)
+                gpe += ((const.G*self.mass_array[n]*self.mass_array[m])/(1+norm_separation))
+            v_mag_current = np.linalg.norm(self.vel_array[n])
+            v_mag_max = math.sqrt(abs((self.planets[n].k + gpe) * 2/self.mass_array[n]))
+            vel_correction[n] = abs(v_mag_max/v_mag_current)
+        return vel_correction
+
+    # def check_energy_conservation_parallel(self, i):
+    #     separation = np.linalg.norm(self.pos_array[i])
+    #     v_mag_current = np.linalg.norm(self.vel_array[i])
+    #     v_mag_max = math.sqrt(abs((self.planets[i].k + ((const.G*self.sun_mass*self.mass_array[i])/(1+separation))) * 2/self.mass_array[i]))
+    #     return abs(v_mag_max/v_mag_current)
 
 class Plotting:
     """
@@ -162,9 +192,10 @@ class Plotting:
         self.lines = []
         self.plots = []
         self.labels = []
-        self.save_anim = False
         self.fig, (self.ax1) = plt.subplots(nrows=1, ncols=1)
         self.fig.set_size_inches(10, 8)
+        self.ax1.set_xlabel("x position (m)")
+        self.ax1.set_ylabel("y position (m)")
         self.ax1.set_xlim(-simulation.axes_limit, simulation.axes_limit)
         self.ax1.set_ylim(-simulation.axes_limit, simulation.axes_limit)
         self.timestamp = self.ax1.text(.03, .94, 'Day: ', color='b', transform=self.ax1.transAxes, fontsize='x-large')
@@ -187,7 +218,7 @@ class Plotting:
     def start_anim(self, simulation):
         ani = animation.FuncAnimation(self.fig, self.animate, repeat=True, frames=self.frames,
                                       fargs=(simulation,), blit=True, interval=0, )
-        if self.save_anim:
+        if simulation.save_anim:
             ani.save('C:/Users/Philip/Pictures/sim/animation2' + str(time.time()) + '.gif', writer='imagemagick', fps=60)
         plt.show()
 

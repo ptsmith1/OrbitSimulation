@@ -21,18 +21,13 @@ class GenerateBody:
         self.k = 0
         self.mass = 0
 
-    def calc_energy_conservation(self, sun_mass):
-        orbital_distance = np.linalg.norm(self.position)
-        velocity_magnitude = np.linalg.norm(self.velocity)
-        self.k = -(const.G * self.mass * sun_mass)/orbital_distance + 0.5 * self.mass * velocity_magnitude * velocity_magnitude
-
 class GenerateStockBody(GenerateBody):
     """
     Generates our solar system
     """
-    def __init__(self, ID, sun_mass):
+    def __init__(self, ID):
         GenerateBody.__init__(self)
-        obj = Horizons(id=ID, location="@sun", epochs=Time("2018-01-01").jd, id_type='id').vectors()
+        obj = Horizons(id=(ID), location="@sun", epochs=Time("2018-01-01").jd, id_type='id').vectors()
         position = np.multiply([np.double(obj[xi]) for xi in ['x', 'y', 'z']], 149597870700) # gets the x,y,z position of earth and converts to si
         velocity = np.multiply([np.double(obj[vi]) for vi in ['vx', 'vy', 'vz']], (149597870700/(24*3600)))
         mass_array = [3.3e23,4.87e24,5.97e24,6.43e23,1.898e27,5.68e26,8.68e25,1.02e26,1.46e22]
@@ -41,7 +36,6 @@ class GenerateStockBody(GenerateBody):
         self.velocity = np.array(velocity,dtype=np.float)
         self.name = np.str(obj['targetname'])
         self.mass = mass_array[self.ID-1]
-        self.calc_energy_conservation(sun_mass)
 
 
 class GenerateRandomBody(GenerateBody):
@@ -59,7 +53,6 @@ class GenerateRandomBody(GenerateBody):
         self.acc = np.array([0, 0, 0])
         self.ID = ID
         self.mass = random.randint(2e23,2e27)
-        self.calc_energy_conservation(sun_mass)
 
 
 class GenerateDebugBody(GenerateBody):
@@ -68,16 +61,15 @@ class GenerateDebugBody(GenerateBody):
     """
     def __init__(self, ID, sun_mass):
         GenerateBody.__init__(self)
-        x_distance = 1e12
-        y_distance = 1e12
-        x_velocity = 0
-        y_velocity = 0
+        x_distance = random.randint(1e12,1.1e12)
+        y_distance = random.randint(1e12,1.1e12)
+        x_velocity = -1
+        y_velocity = -1
         self.position = np.array([x_distance,y_distance,0], dtype=np.float)
         self.velocity = np.array([x_velocity,y_velocity,0], dtype=np.float)
         self.acc = np.array([0, 0, 0])
         self.ID = ID
         self.mass = 2e23
-        self.calc_energy_conservation(sun_mass)
 
 class GenerateStar(GenerateBody):
     """
